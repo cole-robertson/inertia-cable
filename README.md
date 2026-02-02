@@ -211,10 +211,14 @@ The token is verified server-side when the client subscribes, preventing unautho
 
 ## React Hook
 
+> **Note:** Only the React adapter (`@inertia-cable/react`) is available. The server-side gem works with any Inertia frontend, but the client hook is React-only. Vue and Svelte adapters are welcome as community contributions.
+
 ### `useInertiaCable(signedStreamName, options?)`
 
+Returns `{ connected }` — a boolean indicating whether the WebSocket subscription is currently active.
+
 ```tsx
-useInertiaCable(cable_stream, {
+const { connected } = useInertiaCable(cable_stream, {
   // Only reload these props (passed to router.reload)
   only: ['messages'],
 
@@ -226,6 +230,10 @@ useInertiaCable(cable_stream, {
     console.log(`${data.model} #${data.id} was ${data.action}`)
   },
 
+  // Connection lifecycle callbacks
+  onConnected: () => console.log('subscribed'),
+  onDisconnected: () => console.log('lost connection'),
+
   // Client-side debounce in ms (default: 100)
   // Coalesces rapid signals into a single reload
   debounce: 200,
@@ -233,6 +241,11 @@ useInertiaCable(cable_stream, {
   // Disable/enable the subscription (default: true)
   enabled: isVisible,
 })
+
+// Show a reconnecting indicator
+if (!connected) {
+  return <Banner>Reconnecting…</Banner>
+}
 ```
 
 | Option | Type | Default | Description |
@@ -240,8 +253,18 @@ useInertiaCable(cable_stream, {
 | `only` | `string[]` | — | Only reload these props |
 | `except` | `string[]` | — | Reload all props except these |
 | `onRefresh` | `(data) => void` | — | Callback before each reload |
+| `onConnected` | `() => void` | — | Called when subscription connects |
+| `onDisconnected` | `() => void` | — | Called when connection drops |
 | `debounce` | `number` | `100` | Debounce delay in ms |
 | `enabled` | `boolean` | `true` | Enable/disable subscription |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `connected` | `boolean` | Whether the subscription is connected |
+
+### Automatic catch-up on reconnection
+
+When a WebSocket connection drops and reconnects (e.g., after a network interruption or backgrounded tab), the hook automatically triggers a `router.reload()` to catch up on any changes that were missed while disconnected. This only fires on *re*connection — not on the initial connection.
 
 ### `InertiaCableProvider`
 
@@ -292,7 +315,9 @@ end
 
 ## Server-Side Debounce
 
-Coalesce rapid broadcasts using Rails cache:
+Optionally coalesce rapid broadcasts using Rails cache. This is **not used by default** — the standard broadcast path (`InertiaCable.broadcast`) sends every signal, and the client-side 100ms debounce handles coalescing for most use cases.
+
+When you do use it, it requires a shared cache store (Redis, Memcached, or SolidCache) in multi-process deployments. The default `MemoryStore` only works within a single process.
 
 ```ruby
 InertiaCable.debounce_delay = 0.5  # seconds (default)
@@ -394,8 +419,8 @@ The key insight: no data is sent over the WebSocket. It's purely a notification 
 
 - Ruby >= 3.1
 - Rails >= 7.0 (ActionCable, ActiveJob, ActiveSupport)
-- Inertia.js >= 1.0 (React adapter)
-- ActionCable configured with Redis (production) or async (development)
+- Inertia.js >= 1.0 with **React** (`@inertiajs/react`) — the client package is React-only
+- ActionCable configured with Redis or SolidCable (production) or async (development)
 
 ## Development
 

@@ -4,7 +4,7 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Cole Reynolds"]
   spec.summary       = "ActionCable broadcast DSL for Inertia Rails"
   spec.description   = "Lightweight ActionCable integration for Inertia.js Rails apps. Broadcasts refresh signals over WebSockets, triggering Inertia router.reload() on the client."
-  spec.homepage      = "https://github.com/colereynolds/inertia_cable"
+  spec.homepage      = "https://github.com/cole-robertson/inertia-cable"
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 3.1"
 
