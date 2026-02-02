@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { router } from '@inertiajs/react'
 import { getConsumer } from './consumer'
+import { useInertiaCableConsumer } from './InertiaCableProvider'
 
 export interface RefreshPayload {
   type: 'refresh'
@@ -36,6 +37,8 @@ export function useInertiaCable(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasConnectedRef = useRef(false)
 
+  const contextConsumer = useInertiaCableConsumer()
+
   const reloadProps = useCallback(() => {
     const opts = optionsRef.current
     if (timerRef.current) clearTimeout(timerRef.current)
@@ -43,6 +46,7 @@ export function useInertiaCable(
       router.reload({
         only: opts.only,
         except: opts.except,
+        async: true,
       })
     }, opts.debounce)
   }, [])
@@ -55,7 +59,7 @@ export function useInertiaCable(
   useEffect(() => {
     if (!signedStreamName || !enabled) return
 
-    const consumer = getConsumer()
+    const consumer = contextConsumer ?? getConsumer()
     hasConnectedRef.current = false
     setConnected(false)
 
@@ -94,7 +98,7 @@ export function useInertiaCable(
       if (timerRef.current) clearTimeout(timerRef.current)
       subscription.unsubscribe()
     }
-  }, [signedStreamName, enabled, handleRefresh, reloadProps])
+  }, [signedStreamName, enabled, handleRefresh, reloadProps, contextConsumer])
 
   return { connected }
 }
