@@ -1,5 +1,9 @@
 module InertiaCable
   module Suppressor
+    # Global suppression (across all models).
+    #
+    #   InertiaCable.suppressing_broadcasts { ... }
+    #
     thread_mattr_accessor :suppressed, default: false
 
     def self.suppressing(&block)

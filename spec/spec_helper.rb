@@ -18,6 +18,15 @@ module Rails
   end
 end
 
+# Stub ActionCable server for tests — the real server needs pubsub (Redis/async),
+# which we don't have in unit tests. Stub broadcast to be a no-op.
+require "logger"
+ActionCable.server.config.logger = Logger.new(nil)
+allow_broadcast = ActionCable.server
+def allow_broadcast.broadcast(stream, payload, **)
+  # no-op in tests — InertiaCable.broadcast callbacks still fire
+end
+
 require "inertia_cable"
 
 # Include Broadcastable in ActiveRecord for specs
@@ -27,8 +36,6 @@ ActiveRecord::Base.include InertiaCable::Broadcastable
 ActiveJob::Base.queue_adapter = :test
 
 RSpec.configure do |config|
-  config.include ActiveJob::TestHelper
-
   config.expect_with :rspec do |expectations|
     expectations.include_chain_clauses_in_custom_matcher_descriptions = true
   end
@@ -43,6 +50,7 @@ RSpec.configure do |config|
   config.before(:each) do
     InertiaCable.reset_signed_stream_verifier!
     InertiaCable::Suppressor.suppressed = false
-    queue_adapter.enqueued_jobs.clear if respond_to?(:queue_adapter)
+    InertiaCable.broadcast_callbacks.clear
+    ActiveJob::Base.queue_adapter.enqueued_jobs.clear
   end
 end
