@@ -1,26 +1,7 @@
 require "spec_helper"
 
-# Minimal test class that includes the helper, using Minitest-style assertions
-# adapted for RSpec
 class TestHarness
   include InertiaCable::TestHelper
-
-  # Minitest assertion shims for RSpec context
-  def assert_not(value, msg = nil)
-    raise msg || "Expected falsy, got #{value.inspect}" if value
-  end
-
-  def assert(value, msg = nil)
-    raise msg || "Expected truthy, got #{value.inspect}" unless value
-  end
-
-  def assert_equal(expected, actual, msg = nil)
-    raise msg || "Expected #{expected.inspect}, got #{actual.inspect}" unless expected == actual
-  end
-
-  def assert_not_empty(collection, msg = nil)
-    raise msg || "Expected non-empty collection" if collection.empty?
-  end
 end
 
 RSpec.describe InertiaCable::TestHelper do

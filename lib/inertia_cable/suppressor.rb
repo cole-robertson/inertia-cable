@@ -1,3 +1,5 @@
+require "active_support/core_ext/module/attribute_accessors_per_thread"
+
 module InertiaCable
   module Suppressor
     # Global suppression (across all models).

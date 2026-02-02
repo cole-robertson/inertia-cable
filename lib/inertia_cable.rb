@@ -1,5 +1,6 @@
 require "active_support"
 require "active_support/core_ext/module/attribute_accessors"
+require "active_support/core_ext/module/attribute_accessors_per_thread"
 
 module InertiaCable
   mattr_accessor :signed_stream_verifier_key
