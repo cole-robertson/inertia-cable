@@ -16,8 +16,7 @@ interface Props {
 }
 
 export default function ChatShow({ chat, messages, cable_stream }: Props) {
-  // This is the core integration — one line to get live updates
-  useInertiaCable(cable_stream, { only: ["messages"] })
+  const { connected } = useInertiaCable(cable_stream, { only: ["messages"] })
 
   const form = useForm({ body: "" })
 
@@ -36,8 +35,10 @@ export default function ChatShow({ chat, messages, cable_stream }: Props) {
       <div className="mx-auto flex max-w-2xl flex-col p-8" style={{ height: "calc(100vh - 120px)" }}>
         <h1 className="text-2xl font-bold mb-4">{chat.name}</h1>
 
-        <div className="mb-2 text-xs text-gray-400">
-          Live updates via InertiaCable — open this page in two tabs to test
+        <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
+          <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
+          {connected ? "Connected" : "Reconnecting…"}
+          <span className="ml-2">— open this page in two tabs to test</span>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-3 mb-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
