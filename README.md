@@ -235,6 +235,33 @@ Each element is resolved individually: objects that respond to `to_gid_param` us
 
 The token is verified server-side when the client subscribes — invalid or tampered tokens are rejected.
 
+### Lazy props for efficient partial reloads
+
+When using `only` on the client, wrap props in lambdas (`-> { }`) so they're only evaluated when actually requested. Without the lambda, the prop is computed on every request — even when the client only asked for a subset.
+
+```ruby
+class ChatsController < ApplicationController
+  def show
+    chat = Chat.find(params[:id])
+    render inertia: 'Chats/Show', props: {
+      chat: chat.as_json,
+      messages: -> { chat.messages.order(:created_at).as_json },  # lazy — skipped unless requested
+      cable_stream: inertia_cable_stream(chat)
+    }
+  end
+end
+```
+
+When a cable-triggered reload fires with `only: ['messages']`, Inertia sends an `X-Inertia-Partial-Data` header listing just `messages`. Props wrapped in lambdas are only evaluated when they appear in the partial data list — so expensive queries for props *not* in `only` are skipped entirely. Non-lambda props are always evaluated regardless. Wrap any prop that involves a database query or computation in a lambda:
+
+```ruby
+render inertia: 'Dashboard', props: {
+  stats: -> { compute_expensive_stats },       # only evaluated when requested
+  notifications: -> { current_user.notifications.recent },
+  cable_stream: inertia_cable_stream(current_user, :dashboard)
+}
+```
+
 ---
 
 ## React Hook
@@ -249,7 +276,8 @@ Returns `{ connected }` — a boolean indicating whether the WebSocket subscript
 const { connected } = useInertiaCable(cable_stream, {
   only: ['messages'],           // only reload these props
   except: ['metadata'],         // reload all except these
-  onRefresh: (data) => {        // callback before each reload
+  async: true,                  // non-blocking reload (won't cancel other visits)
+  onRefresh: (data) => {        // callback before each reload — return false to skip
     console.log(`${data.model} #${data.id} was ${data.action}`)
     if (data.extra?.priority === 'high') toast.warn('Priority update!')
   },
@@ -267,14 +295,29 @@ const { connected } = useInertiaCable(cable_stream, {
 |--------|------|---------|-------------|
 | `only` | `string[]` | — | Only reload these props |
 | `except` | `string[]` | — | Reload all props except these |
-| `onRefresh` | `(data) => void` | — | Callback before each reload |
+| `async` | `boolean` | `false` | Non-blocking reload (won't cancel in-flight visits) |
+| `onRefresh` | `(data) => void \| false` | — | Callback before each reload — return `false` to skip |
 | `onMessage` | `(data) => void` | — | Receive direct message data (no reload) |
 | `onConnected` | `() => void` | — | Called when subscription connects |
 | `onDisconnected` | `() => void` | — | Called when connection drops |
 | `debounce` | `number` | `100` | Debounce delay in ms |
 | `enabled` | `boolean` | `true` | Enable/disable subscription |
 
+**Under the hood**, the hook calls Inertia's `router.reload()`, which sets `preserveState` and `preserveScroll` to `true` by default — your component state and scroll position are preserved across cable-triggered reloads.
+
 **Automatic catch-up on reconnection:** When a WebSocket connection drops and reconnects (e.g., network interruption or backgrounded tab), the hook automatically triggers a `router.reload()` to fetch any changes missed while disconnected. This only fires on *re*connection — not the initial connect. ActionCable handles the reconnection itself (with exponential backoff); the hook just ensures your props are fresh when it comes back.
+
+**Conditional reloads with `onRefresh`:** Return `false` from `onRefresh` to skip the reload entirely. This is useful for filtering by action type or applying custom reload logic:
+
+```tsx
+useInertiaCable(cable_stream, {
+  only: ['messages'],
+  onRefresh: (data) => {
+    // Only reload on create/destroy — ignore updates
+    if (data.action === 'update') return false
+  },
+})
+```
 
 Use `connected` to show connection state in the UI:
 
@@ -286,10 +329,12 @@ if (!connected) return <Banner>Reconnecting…</Banner>
 
 ### Multiple streams on one page
 
+When subscribing to multiple streams, use `only` to scope each hook to its own props and `async` to prevent reloads from cancelling each other. By default, Inertia cancels any in-flight visit when a new one starts — `async: true` makes reloads independent so two streams firing at the same time don't interfere.
+
 ```tsx
 function Dashboard({ stats, notifications, stats_stream, notifications_stream }) {
-  useInertiaCable(stats_stream, { only: ['stats'] })
-  useInertiaCable(notifications_stream, { only: ['notifications'] })
+  useInertiaCable(stats_stream, { only: ['stats'], async: true })
+  useInertiaCable(notifications_stream, { only: ['notifications'], async: true })
 
   return (
     <>

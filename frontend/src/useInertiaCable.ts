@@ -22,7 +22,8 @@ export type CablePayload = RefreshPayload | MessagePayload
 export interface UseInertiaCableOptions {
   only?: string[]
   except?: string[]
-  onRefresh?: (data: RefreshPayload) => void
+  async?: boolean
+  onRefresh?: (data: RefreshPayload) => void | false
   onMessage?: (data: Record<string, unknown>) => void
   onConnected?: () => void
   onDisconnected?: () => void
@@ -38,9 +39,9 @@ export function useInertiaCable(
   signedStreamName: string | null | undefined,
   options: UseInertiaCableOptions = {}
 ): UseInertiaCableReturn {
-  const { only, except, onRefresh, onMessage, onConnected, onDisconnected, debounce = 100, enabled = true } = options
-  const optionsRef = useRef({ only, except, onRefresh, onMessage, onConnected, onDisconnected, debounce })
-  optionsRef.current = { only, except, onRefresh, onMessage, onConnected, onDisconnected, debounce }
+  const { only, except, async: asyncReload, onRefresh, onMessage, onConnected, onDisconnected, debounce = 100, enabled = true } = options
+  const optionsRef = useRef({ only, except, asyncReload, onRefresh, onMessage, onConnected, onDisconnected, debounce })
+  optionsRef.current = { only, except, asyncReload, onRefresh, onMessage, onConnected, onDisconnected, debounce }
 
   const [connected, setConnected] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -55,12 +56,13 @@ export function useInertiaCable(
       router.reload({
         ...(opts.only ? { only: opts.only } : {}),
         ...(opts.except ? { except: opts.except } : {}),
+        ...(opts.asyncReload ? { async: true } : {}),
       })
     }, opts.debounce)
   }, [])
 
   const handleRefresh = useCallback((data: RefreshPayload) => {
-    optionsRef.current.onRefresh?.(data)
+    if (optionsRef.current.onRefresh?.(data) === false) return
     reloadProps()
   }, [reloadProps])
 
