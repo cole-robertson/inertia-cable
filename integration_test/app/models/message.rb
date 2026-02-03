@@ -6,5 +6,5 @@ class Message < ApplicationRecord
 
   validates :body, presence: true
 
-  broadcasts_refreshes_to :chat
+  broadcasts_to :chat
 end
