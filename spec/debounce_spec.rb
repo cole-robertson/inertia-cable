@@ -15,6 +15,19 @@ RSpec.describe InertiaCable::Debounce do
       InertiaCable::Debounce.broadcast(stream_name, payload)
     end
 
+    it "fires broadcast callbacks" do
+      allow(ActionCable.server).to receive(:broadcast)
+      called_with = nil
+      callback = ->(name, data) { called_with = [name, data] }
+      InertiaCable.on_broadcast(&callback)
+
+      InertiaCable::Debounce.broadcast(stream_name, payload)
+
+      expect(called_with).to eq([stream_name, payload])
+    ensure
+      InertiaCable.off_broadcast(&callback)
+    end
+
     it "skips broadcast when cache key exists" do
       Rails.cache.write("inertia_cable:debounce:#{stream_name}", true, expires_in: 1)
 

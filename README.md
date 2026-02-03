@@ -418,13 +418,24 @@ end
 
 Optionally coalesce rapid broadcasts using Rails cache. **Not used by default** — the client-side 100ms debounce handles most cases.
 
-Requires a shared cache store (Redis, Memcached, or SolidCache) in multi-process deployments.
+Server-side debounce is useful when a single operation triggers many model callbacks (e.g., bulk imports, cascading updates) and you want to reduce the number of ActionCable messages sent. The client-side debounce already coalesces rapid reloads into one, so server-side debounce is only needed when the volume of WebSocket messages itself is a concern.
+
+Requires a shared cache store (Redis, Memcached, or SolidCache) in multi-process deployments. `MemoryStore` (the Rails default) only works within a single process.
 
 ```ruby
-InertiaCable.debounce_delay = 0.5  # seconds (default)
+# Via the model DSL
+broadcasts_to :board, debounce: true        # uses InertiaCable.debounce_delay (0.5s)
+broadcasts_to :board, debounce: 1.0         # custom delay in seconds
 
+# Via instance methods
+post.broadcast_refresh_later_to(board, debounce: 2.0)
+
+# Direct usage
 InertiaCable::Debounce.broadcast("my_stream", payload)
 InertiaCable::Debounce.broadcast("my_stream", payload, delay: 2.0)
+
+# Configure the global default
+InertiaCable.debounce_delay = 0.5  # seconds (default)
 ```
 
 ---
@@ -474,6 +485,21 @@ end
 | `capture_broadcasts_on(*streamables) { }` | Capture and return payload array |
 
 All three accept splat streamables: `assert_broadcasts_on(chat, :messages) { ... }`
+
+### Broadcast callbacks
+
+`InertiaCable.on_broadcast` registers a callback that fires for every broadcast (including debounced ones). The test helpers use this internally, but you can use it for custom instrumentation or logging:
+
+```ruby
+callback = ->(stream_name, payload) {
+  Rails.logger.info "[InertiaCable] #{payload[:type]} on #{stream_name}"
+}
+
+InertiaCable.on_broadcast(&callback)
+
+# Later, to unregister:
+InertiaCable.off_broadcast(&callback)
+```
 
 ---
 

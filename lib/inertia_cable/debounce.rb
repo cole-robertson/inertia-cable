@@ -6,6 +6,7 @@ module InertiaCable
       return if Rails.cache.exist?(cache_key)
 
       Rails.cache.write(cache_key, true, expires_in: delay)
+      InertiaCable.broadcast_callbacks.each { |cb| cb.call(stream_name, payload) }
       ActionCable.server.broadcast(stream_name, payload)
     end
   end
