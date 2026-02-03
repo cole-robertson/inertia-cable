@@ -383,6 +383,15 @@ useInertiaCable(stream, {
 })
 ```
 
+### Broadcasting without a model instance
+
+Use `InertiaCable.broadcast_message_to` from anywhere — jobs, services, controllers — without needing a model instance:
+
+```ruby
+InertiaCable.broadcast_message_to("dashboard", data: { alert: "Deployment complete" })
+InertiaCable.broadcast_message_to(user, :notifications, data: { count: 5 })
+```
+
 Messages are delivered immediately with no debouncing. Each `broadcast_message_to` call triggers exactly one `onMessage` callback.
 
 ---

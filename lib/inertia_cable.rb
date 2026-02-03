@@ -28,6 +28,15 @@ module InertiaCable
     ActionCable.server.broadcast(resolved, payload)
   end
 
+  # Broadcast a direct message without a model instance.
+  #
+  #   InertiaCable.broadcast_message_to("dashboard", data: { alert: "done" })
+  #   InertiaCable.broadcast_message_to(user, :notifications, data: { count: 5 })
+  #
+  def self.broadcast_message_to(*streamables, data:)
+    broadcast(streamables, { type: "message", data: data })
+  end
+
   def self.suppressing_broadcasts(&block)
     InertiaCable::Suppressor.suppressing(&block)
   end

@@ -529,6 +529,33 @@ RSpec.describe InertiaCable::Broadcastable do
   end
 
   # ---------------------------------------------------------------------------
+  # InertiaCable.broadcast_message_to (class-level, no model instance)
+  # ---------------------------------------------------------------------------
+  describe "InertiaCable.broadcast_message_to" do
+    it "broadcasts a message to a string stream" do
+      expect(InertiaCable).to receive(:broadcast)
+        .with(["dashboard"], { type: "message", data: { alert: "done" } })
+
+      InertiaCable.broadcast_message_to("dashboard", data: { alert: "done" })
+    end
+
+    it "broadcasts a message with splat streamables" do
+      expect(InertiaCable).to receive(:broadcast)
+        .with([board, :notifications], { type: "message", data: { count: 5 } })
+
+      InertiaCable.broadcast_message_to(board, :notifications, data: { count: 5 })
+    end
+
+    it "respects global suppression" do
+      expect(ActionCable.server).not_to receive(:broadcast)
+
+      InertiaCable.suppressing_broadcasts do
+        InertiaCable.broadcast_message_to("dashboard", data: { alert: "done" })
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Stream resolution
   # ---------------------------------------------------------------------------
   describe "stream resolution" do
