@@ -13,17 +13,17 @@ module InertiaCable
 
       # Broadcast refresh signal to a named stream on commit.
       #
-      #   broadcasts_refreshes_to :board
-      #   broadcasts_refreshes_to :board, on: [:create, :destroy]
-      #   broadcasts_refreshes_to :board, if: :published?
-      #   broadcasts_refreshes_to :board, unless: -> { draft? }
-      #   broadcasts_refreshes_to ->(post) { [post.board, :posts] }
-      #   broadcasts_refreshes_to :board, extra: { priority: "high" }
-      #   broadcasts_refreshes_to :board, extra: ->(post) { { category: post.category } }
-      #   broadcasts_refreshes_to :board, debounce: true
-      #   broadcasts_refreshes_to :board, debounce: 1.0
+      #   broadcasts_to :board
+      #   broadcasts_to :board, on: [:create, :destroy]
+      #   broadcasts_to :board, if: :published?
+      #   broadcasts_to :board, unless: -> { draft? }
+      #   broadcasts_to ->(post) { [post.board, :posts] }
+      #   broadcasts_to :board, extra: { priority: "high" }
+      #   broadcasts_to :board, extra: ->(post) { { category: post.category } }
+      #   broadcasts_to :board, debounce: true
+      #   broadcasts_to :board, debounce: 1.0
       #
-      def broadcasts_refreshes_to(stream, on: %i[create update destroy], if: nil, unless: nil, extra: nil, debounce: nil)
+      def broadcasts_to(stream, on: %i[create update destroy], if: nil, unless: nil, extra: nil, debounce: nil)
         callback_condition = binding.local_variable_get(:if)
         callback_unless    = binding.local_variable_get(:unless)
         events = Array(on)
@@ -57,20 +57,20 @@ module InertiaCable
         end
       end
 
-      # Short alias for broadcasts_refreshes_to.
-      alias_method :broadcasts_to, :broadcasts_refreshes_to
+      # Legacy alias — kept for compatibility with Turbo-style naming.
+      alias_method :broadcasts_refreshes_to, :broadcasts_to
 
       # Convention-based: broadcasts to model_name.plural stream.
       #
-      #   broadcasts_refreshes
-      #   broadcasts_refreshes on: [:create, :destroy]
+      #   broadcasts
+      #   broadcasts on: [:create, :destroy]
       #
-      def broadcasts_refreshes(**options)
-        broadcasts_refreshes_to(model_name.plural, **options)
+      def broadcasts(**options)
+        broadcasts_to(model_name.plural, **options)
       end
 
-      # Short alias for broadcasts_refreshes.
-      alias_method :broadcasts, :broadcasts_refreshes
+      # Legacy alias — kept for compatibility with Turbo-style naming.
+      alias_method :broadcasts_refreshes, :broadcasts
 
       def suppressing_broadcasts(&block)
         original = suppressed_inertia_cable_broadcasts

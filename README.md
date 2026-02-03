@@ -59,7 +59,7 @@ rails generate inertia_cable:install
 ```ruby
 class Message < ApplicationRecord
   belongs_to :chat
-  broadcasts_refreshes_to :chat
+  broadcasts_to :chat
 end
 ```
 
@@ -101,7 +101,7 @@ That's it. When any user creates, updates, or deletes a message, all connected c
 
 ## Model DSL
 
-### `broadcasts_refreshes_to`
+### `broadcasts_to`
 
 Broadcasts a refresh signal to a named stream whenever the model is committed. Uses a single `after_commit` callback.
 
@@ -110,29 +110,17 @@ class Post < ApplicationRecord
   belongs_to :board
 
   # Stream to the associated record (calls post.board to resolve)
-  broadcasts_refreshes_to :board
+  broadcasts_to :board
 
   # Stream to a lambda (receives the record as argument)
-  broadcasts_refreshes_to ->(post) { [post.board, :posts] }
+  broadcasts_to ->(post) { [post.board, :posts] }
 
   # Stream to a static string
-  broadcasts_refreshes_to "global_feed"
+  broadcasts_to "global_feed"
 end
 ```
 
-#### `broadcasts_to` (short alias)
-
-`broadcasts_to` is an alias for `broadcasts_refreshes_to`. All options work identically:
-
-```ruby
-class Post < ApplicationRecord
-  belongs_to :board
-
-  broadcasts_to :board
-  broadcasts_to :board, on: [:create, :destroy]
-  broadcasts_to :board, if: :published?
-end
-```
+> **Note:** `broadcasts_refreshes_to` is available as a legacy alias if you prefer the Turbo-style naming. All options are identical.
 
 #### Stream resolution
 
@@ -144,28 +132,6 @@ end
 | ActiveRecord model | Uses GlobalID (`gid://app/Board/1`) |
 | `Array` | Joins elements with `:` after resolving each |
 
-##### Advanced stream resolution
-
-Each element in a stream is resolved individually:
-
-- **`to_gid_param` vs `to_param`**: If an object responds to `to_gid_param` (ActiveRecord models), that is used. Otherwise `to_param` is called. This means you can pass plain strings, symbols, or models interchangeably.
-- **Nested arrays are flattened**: `[board, [:posts, :active]]` becomes `"gid://app/Board/1:posts:active"`.
-- **`nil` and blank elements are stripped**: `[board, nil, :posts]` becomes `"gid://app/Board/1:posts"`.
-
-```ruby
-# Model (uses to_gid_param → "gid://app/Board/1")
-inertia_cable_stream(board)               # → signed "gid://app/Board/1"
-
-# Symbol (uses to_param → "posts")
-inertia_cable_stream(:posts)              # → signed "posts"
-
-# Compound with nested array
-inertia_cable_stream(board, [:posts, :active])  # → signed "gid://app/Board/1:posts:active"
-
-# nil elements stripped
-inertia_cable_stream(board, nil, :posts)  # → signed "gid://app/Board/1:posts"
-```
-
 #### `on:` — selective events
 
 By default, broadcasts fire on create, update, and destroy. Use `on:` to limit:
@@ -173,7 +139,7 @@ By default, broadcasts fire on create, update, and destroy. Use `on:` to limit:
 ```ruby
 class Post < ApplicationRecord
   # Only broadcast when a post is created or destroyed — skip updates
-  broadcasts_refreshes_to :board, on: [:create, :destroy]
+  broadcasts_to :board, on: [:create, :destroy]
 end
 ```
 
@@ -184,10 +150,10 @@ Standard Rails callback conditions:
 ```ruby
 class Post < ApplicationRecord
   # Only broadcast published posts
-  broadcasts_refreshes_to :board, if: :published?
+  broadcasts_to :board, if: :published?
 
   # Skip draft posts
-  broadcasts_refreshes_to :board, unless: -> { draft? }
+  broadcasts_to :board, unless: -> { draft? }
 end
 ```
 
@@ -195,7 +161,7 @@ All options compose:
 
 ```ruby
 class Post < ApplicationRecord
-  broadcasts_refreshes_to :board, on: [:create, :destroy], if: :published?
+  broadcasts_to :board, on: [:create, :destroy], if: :published?
 end
 ```
 
@@ -206,10 +172,10 @@ Attach additional data to the broadcast payload. Accepts a `Hash` or a `Proc` th
 ```ruby
 class Post < ApplicationRecord
   # Static extra fields
-  broadcasts_refreshes_to :board, extra: { priority: "high" }
+  broadcasts_to :board, extra: { priority: "high" }
 
   # Dynamic extra fields (proc receives the record)
-  broadcasts_refreshes_to :board, extra: ->(post) { { category: post.category } }
+  broadcasts_to :board, extra: ->(post) { { category: post.category } }
 end
 ```
 
@@ -222,36 +188,27 @@ Route broadcasts through `InertiaCable::Debounce` instead of the default async j
 ```ruby
 class Post < ApplicationRecord
   # Use global InertiaCable.debounce_delay
-  broadcasts_refreshes_to :board, debounce: true
+  broadcasts_to :board, debounce: true
 
   # Custom delay in seconds
-  broadcasts_refreshes_to :board, debounce: 1.0
+  broadcasts_to :board, debounce: 1.0
 end
 ```
 
 This requires a shared cache store (Redis, Memcached, or SolidCache) in multi-process deployments.
 
-### `broadcasts_refreshes`
+### `broadcasts`
 
 Convention-based version that broadcasts to `model_name.plural` (e.g., `"posts"`):
 
 ```ruby
 class Post < ApplicationRecord
-  broadcasts_refreshes                           # broadcasts to "posts"
-  broadcasts_refreshes on: [:create, :destroy]   # with options
+  broadcasts                           # broadcasts to "posts"
+  broadcasts on: [:create, :destroy]   # with options
 end
 ```
 
-#### `broadcasts` (short alias)
-
-`broadcasts` is an alias for `broadcasts_refreshes`:
-
-```ruby
-class Post < ApplicationRecord
-  broadcasts                                     # same as broadcasts_refreshes
-  broadcasts on: [:create, :destroy]             # with options
-end
-```
+> **Note:** `broadcasts_refreshes` is available as a legacy alias.
 
 ### Instance methods
 
@@ -332,6 +289,21 @@ inertia_cable_stream(chat, :messages)     # signed "gid://app/Chat/1:messages"
 ```
 
 The token is verified server-side when the client subscribes, preventing unauthorized stream access.
+
+#### Stream resolution details
+
+Each element in a stream is resolved individually:
+
+- **`to_gid_param` vs `to_param`**: If an object responds to `to_gid_param` (ActiveRecord models), that is used. Otherwise `to_param` is called. This means you can pass plain strings, symbols, or models interchangeably.
+- **Nested arrays are flattened**: `[board, [:posts, :active]]` becomes `"gid://app/Board/1:posts:active"`.
+- **`nil` and blank elements are stripped**: `[board, nil, :posts]` becomes `"gid://app/Board/1:posts"`.
+
+```ruby
+inertia_cable_stream(board)                       # → signed "gid://app/Board/1"
+inertia_cable_stream(:posts)                      # → signed "posts"
+inertia_cable_stream(board, [:posts, :active])    # → signed "gid://app/Board/1:posts:active"
+inertia_cable_stream(board, nil, :posts)          # → signed "gid://app/Board/1:posts"
+```
 
 ---
 
@@ -691,7 +663,7 @@ The stream signed in the controller must match the stream the model broadcasts t
 
 ```ruby
 # Model
-broadcasts_refreshes_to :board  # broadcasts to gid://app/Board/1
+broadcasts_to :board  # broadcasts to gid://app/Board/1
 
 # Controller — must sign the same board object
 inertia_cable_stream(@post.board)  # signs gid://app/Board/1 ✓

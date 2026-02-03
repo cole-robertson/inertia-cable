@@ -20,25 +20,25 @@ end
 
 class Post < ActiveRecord::Base
   belongs_to :board
-  broadcasts_refreshes_to :board
+  broadcasts_to :board
 end
 
 class Article < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes
+  broadcasts
 end
 
 class SelectivePost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, on: %i[create destroy]
+  broadcasts_to :board, on: %i[create destroy]
 end
 
 class ConditionalPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, if: :published?
+  broadcasts_to :board, if: :published?
 
   def published?
     published
@@ -48,49 +48,49 @@ end
 class UnlessPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, unless: -> { title == "draft" }
+  broadcasts_to :board, unless: -> { title == "draft" }
 end
 
 class LambdaStreamPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to ->(post) { [post.board, :posts] }
+  broadcasts_to ->(post) { [post.board, :posts] }
 end
 
-class AliasPost < ActiveRecord::Base
+class LegacyAliasPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_to :board
+  broadcasts_refreshes_to :board
 end
 
-class AliasConventionPost < ActiveRecord::Base
+class LegacyAliasConventionPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts
+  broadcasts_refreshes
 end
 
 class ExtraHashPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, extra: { priority: "high" }
+  broadcasts_to :board, extra: { priority: "high" }
 end
 
 class ExtraProcPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, extra: ->(post) { { title_length: post.title.length } }
+  broadcasts_to :board, extra: ->(post) { { title_length: post.title.length } }
 end
 
 class DebouncedPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, debounce: true
+  broadcasts_to :board, debounce: true
 end
 
 class CustomDelayDebouncedPost < ActiveRecord::Base
   self.table_name = "posts"
   belongs_to :board, foreign_key: :board_id
-  broadcasts_refreshes_to :board, debounce: 2.0
+  broadcasts_to :board, debounce: 2.0
 end
 
 RSpec.describe InertiaCable::Broadcastable do
@@ -103,9 +103,9 @@ RSpec.describe InertiaCable::Broadcastable do
   before(:each) { enqueued_jobs.clear }
 
   # ---------------------------------------------------------------------------
-  # broadcasts_refreshes_to (basic)
+  # broadcasts_to (basic)
   # ---------------------------------------------------------------------------
-  describe ".broadcasts_refreshes_to" do
+  describe ".broadcasts_to" do
     it "enqueues a broadcast job on create" do
       expect { Post.create!(title: "Hello", board: board) }
         .to change { enqueued_jobs.size }.by(1)
@@ -131,9 +131,9 @@ RSpec.describe InertiaCable::Broadcastable do
   end
 
   # ---------------------------------------------------------------------------
-  # broadcasts_refreshes (convention-based)
+  # broadcasts (convention-based)
   # ---------------------------------------------------------------------------
-  describe ".broadcasts_refreshes" do
+  describe ".broadcasts" do
     it "enqueues a broadcast job using model_name.plural" do
       expect { Article.create!(title: "News", board_id: board.id) }
         .to change { enqueued_jobs.size }.by(1)
@@ -294,20 +294,20 @@ RSpec.describe InertiaCable::Broadcastable do
   end
 
   # ---------------------------------------------------------------------------
-  # broadcasts_to / broadcasts aliases
+  # Legacy aliases (broadcasts_refreshes_to / broadcasts_refreshes)
   # ---------------------------------------------------------------------------
-  describe ".broadcasts_to alias" do
-    it "works the same as broadcasts_refreshes_to" do
-      expect { AliasPost.create!(title: "Hello", board: board) }
+  describe ".broadcasts_refreshes_to legacy alias" do
+    it "works the same as broadcasts_to" do
+      expect { LegacyAliasPost.create!(title: "Hello", board: board) }
         .to change { enqueued_jobs.size }.by(1)
 
       expect(enqueued_jobs.last["job_class"]).to eq("InertiaCable::BroadcastJob")
     end
   end
 
-  describe ".broadcasts alias" do
-    it "works the same as broadcasts_refreshes" do
-      expect { AliasConventionPost.create!(title: "Hello", board_id: board.id) }
+  describe ".broadcasts_refreshes legacy alias" do
+    it "works the same as broadcasts" do
+      expect { LegacyAliasConventionPost.create!(title: "Hello", board_id: board.id) }
         .to change { enqueued_jobs.size }.by(1)
     end
   end
