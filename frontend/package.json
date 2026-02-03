@@ -1,6 +1,6 @@
 {
   "name": "@inertia-cable/react",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "React hooks for InertiaCable - ActionCable integration for Inertia.js",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
