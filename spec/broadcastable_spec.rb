@@ -441,6 +441,94 @@ RSpec.describe InertiaCable::Broadcastable do
   end
 
   # ---------------------------------------------------------------------------
+  # broadcast_message_to / broadcast_message_later_to
+  # ---------------------------------------------------------------------------
+  describe "#broadcast_message_to" do
+    it "broadcasts a message payload synchronously" do
+      post = Post.create!(title: "Hello", board: board)
+
+      expect(InertiaCable).to receive(:broadcast)
+        .with([board], { type: "message", data: { progress: 50 } })
+
+      post.broadcast_message_to(board, data: { progress: 50 })
+    end
+
+    it "broadcasts with splat args" do
+      post = Post.create!(title: "Hello", board: board)
+
+      expect(InertiaCable).to receive(:broadcast)
+        .with([board, :posts], { type: "message", data: { step: 3 } })
+
+      post.broadcast_message_to(board, :posts, data: { step: 3 })
+    end
+
+    it "skips broadcast when block returns falsy" do
+      post = Post.create!(title: "Hello", board: board)
+
+      expect(InertiaCable).not_to receive(:broadcast)
+
+      post.broadcast_message_to(board, data: { progress: 50 }) { false }
+    end
+
+    it "broadcasts when block returns truthy" do
+      post = Post.create!(title: "Hello", board: board)
+
+      expect(InertiaCable).to receive(:broadcast)
+        .with([board], { type: "message", data: { progress: 50 } })
+
+      post.broadcast_message_to(board, data: { progress: 50 }) { true }
+    end
+  end
+
+  describe "#broadcast_message_later_to" do
+    it "enqueues a job with message payload" do
+      post = Post.create!(title: "Hello", board: board)
+      enqueued_jobs.clear
+
+      post.broadcast_message_later_to("custom_stream", data: { progress: 75 })
+
+      expect(enqueued_jobs.size).to eq(1)
+      expect(enqueued_jobs.last["job_class"]).to eq("InertiaCable::BroadcastJob")
+
+      payload = enqueued_jobs.last["arguments"].last
+      expect(payload["type"]).to eq("message")
+      expect(payload["data"]).to include("progress" => 75)
+    end
+
+    it "skips enqueue when block returns falsy" do
+      post = Post.create!(title: "Hello", board: board)
+      enqueued_jobs.clear
+
+      post.broadcast_message_later_to(board, data: { progress: 50 }) { false }
+
+      expect(enqueued_jobs.size).to eq(0)
+    end
+  end
+
+  describe "suppression applies to messages" do
+    it "suppresses broadcast_message_to" do
+      post = Post.create!(title: "Hello", board: board)
+
+      expect(InertiaCable).not_to receive(:broadcast)
+
+      Post.suppressing_broadcasts do
+        post.broadcast_message_to(board, data: { progress: 50 })
+      end
+    end
+
+    it "suppresses broadcast_message_later_to" do
+      post = Post.create!(title: "Hello", board: board)
+      enqueued_jobs.clear
+
+      Post.suppressing_broadcasts do
+        post.broadcast_message_later_to(board, data: { progress: 50 })
+      end
+
+      expect(enqueued_jobs.size).to eq(0)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Stream resolution
   # ---------------------------------------------------------------------------
   describe "stream resolution" do

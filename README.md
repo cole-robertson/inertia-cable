@@ -19,6 +19,7 @@ Inertia HTTP request → controller re-evaluates props → React re-renders
 - [Model DSL](#model-dsl)
 - [Controller Helper](#controller-helper)
 - [React Hook](#react-hook)
+- [Direct Messages](#direct-messages)
 - [Suppressing Broadcasts](#suppressing-broadcasts)
 - [Server-Side Debounce](#server-side-debounce)
 - [Testing](#testing)
@@ -181,11 +182,16 @@ post.broadcast_refresh_later_to(board, debounce: 2.0)
 
 # With inline condition (block — skips broadcast if falsy)
 post.broadcast_refresh_to(board) { published? }
+
+# Direct messages (ephemeral data, no prop reload)
+post.broadcast_message_to(board, data: { progress: 50 })
+post.broadcast_message_later_to(board, data: { progress: 50 })
+post.broadcast_message_to(board, data: { progress: 50 }) { running? }
 ```
 
 ### Broadcast payload
 
-Every broadcast sends this JSON:
+Refresh broadcasts send this JSON:
 
 ```json
 {
@@ -199,6 +205,17 @@ Every broadcast sends this JSON:
 ```
 
 The `action` field is `"create"`, `"update"`, or `"destroy"`. The `extra` field contains data from the `extra:` option (empty object if not set).
+
+Message broadcasts send a minimal payload:
+
+```json
+{
+  "type": "message",
+  "data": { "progress": 50, "total": 200 }
+}
+```
+
+Messages are ephemeral — no `model`, `id`, `action`, or `timestamp` fields.
 
 ---
 
@@ -234,6 +251,9 @@ const { connected } = useInertiaCable(cable_stream, {
     console.log(`${data.model} #${data.id} was ${data.action}`)
     if (data.extra?.priority === 'high') toast.warn('Priority update!')
   },
+  onMessage: (data) => {        // receive direct messages (no reload)
+    setProgress(data.progress)
+  },
   onConnected: () => {},        // subscription connected
   onDisconnected: () => {},     // connection dropped
   debounce: 200,                // client-side debounce in ms (default: 100)
@@ -246,6 +266,7 @@ const { connected } = useInertiaCable(cable_stream, {
 | `only` | `string[]` | — | Only reload these props |
 | `except` | `string[]` | — | Reload all props except these |
 | `onRefresh` | `(data) => void` | — | Callback before each reload |
+| `onMessage` | `(data) => void` | — | Receive direct message data (no reload) |
 | `onConnected` | `() => void` | — | Called when subscription connects |
 | `onDisconnected` | `() => void` | — | Called when connection drops |
 | `debounce` | `number` | `100` | Debounce delay in ms |
@@ -297,7 +318,70 @@ createInertiaApp({
 
 `getConsumer()` and `setConsumer()` are also exported for low-level access to the ActionCable consumer singleton.
 
-TypeScript types (`RefreshPayload`, `UseInertiaCableOptions`, `UseInertiaCableReturn`, `InertiaCableProviderProps`) are exported from `@inertia-cable/react`.
+TypeScript types (`RefreshPayload`, `MessagePayload`, `CablePayload`, `UseInertiaCableOptions`, `UseInertiaCableReturn`, `InertiaCableProviderProps`) are exported from `@inertia-cable/react`. `CablePayload` is a discriminated union of `RefreshPayload | MessagePayload` for type-safe handling of raw payloads.
+
+---
+
+## Direct Messages
+
+Push ephemeral data directly into React state over the same signed stream — no prop reload, no extra hook.
+
+### Job progress example
+
+```ruby
+# app/jobs/csv_import_job.rb
+class CsvImportJob < ApplicationJob
+  def perform(import)
+    rows = CSV.read(import.file.path)
+    rows.each_with_index do |row, i|
+      process_row(row)
+      import.broadcast_message_to(import.user, data: { progress: i + 1, total: rows.size })
+    end
+    import.broadcast_refresh_to(import.user) # final reload with completed data
+  end
+end
+```
+
+```tsx
+import { useState } from 'react'
+import { useInertiaCable } from '@inertia-cable/react'
+
+export default function ImportShow({ import_record, cable_stream }) {
+  const [progress, setProgress] = useState<{ progress: number; total: number } | null>(null)
+
+  useInertiaCable(cable_stream, {
+    only: ['import_record'],
+    onMessage: (data) => setProgress({ progress: data.progress as number, total: data.total as number }),
+  })
+
+  return (
+    <div>
+      <h1>Import #{import_record.id}</h1>
+      {progress && <p>Processing {progress.progress} / {progress.total}</p>}
+    </div>
+  )
+}
+```
+
+### Usage patterns
+
+```tsx
+// Prop reload only (unchanged)
+useInertiaCable(stream, { only: ['messages'] })
+
+// Direct data only (no reload)
+useInertiaCable(stream, {
+  onMessage: (data) => setProgress(data.progress)
+})
+
+// Both — progress during job, final reload on completion
+useInertiaCable(stream, {
+  only: ['imports'],
+  onMessage: (data) => setProgress(data.progress)
+})
+```
+
+Messages are delivered immediately with no debouncing. Each `broadcast_message_to` call triggers exactly one `onMessage` callback.
 
 ---
 

@@ -128,6 +128,33 @@ module InertiaCable
       broadcast_refresh_later_to(self.class.model_name.plural, &block)
     end
 
+    # Broadcast a direct message synchronously to explicit stream(s).
+    #
+    #   post.broadcast_message_to(board, data: { progress: 50 })
+    #   post.broadcast_message_to(board, :posts, data: { progress: 50 })
+    #   post.broadcast_message_to(board, data: { progress: 50 }) { running? }
+    #
+    def broadcast_message_to(*streamables, data:, &block)
+      return if self.class.suppressed_inertia_cable_broadcasts?
+      return if block && !instance_exec(&block)
+
+      InertiaCable.broadcast(streamables, message_payload(data: data))
+    end
+
+    # Broadcast a direct message asynchronously to explicit stream(s).
+    #
+    #   post.broadcast_message_later_to(board, data: { progress: 50 })
+    #   post.broadcast_message_later_to(board, :posts, data: { progress: 50 })
+    #   post.broadcast_message_later_to(board, data: { progress: 50 }) { running? }
+    #
+    def broadcast_message_later_to(*streamables, data:, &block)
+      return if self.class.suppressed_inertia_cable_broadcasts?
+      return if block && !instance_exec(&block)
+
+      resolved = InertiaCable::Streams::StreamName.stream_name_from(streamables)
+      InertiaCable::BroadcastJob.perform_later(resolved, message_payload(data: data))
+    end
+
     private
 
     def resolve_stream(stream)
@@ -167,6 +194,10 @@ module InertiaCable
       }
       payload[:extra] = extra if extra.present?
       payload
+    end
+
+    def message_payload(data:)
+      { type: "message", data: data }
     end
   end
 end
