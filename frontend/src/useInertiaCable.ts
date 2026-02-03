@@ -12,10 +12,16 @@ export interface RefreshPayload {
   extra?: Record<string, unknown>
 }
 
+export interface MessagePayload {
+  type: 'message'
+  data: Record<string, unknown>
+}
+
 export interface UseInertiaCableOptions {
   only?: string[]
   except?: string[]
   onRefresh?: (data: RefreshPayload) => void
+  onMessage?: (data: Record<string, unknown>) => void
   onConnected?: () => void
   onDisconnected?: () => void
   debounce?: number
@@ -30,9 +36,9 @@ export function useInertiaCable(
   signedStreamName: string | null | undefined,
   options: UseInertiaCableOptions = {}
 ): UseInertiaCableReturn {
-  const { only, except, onRefresh, onConnected, onDisconnected, debounce = 100, enabled = true } = options
-  const optionsRef = useRef({ only, except, onRefresh, onConnected, onDisconnected, debounce })
-  optionsRef.current = { only, except, onRefresh, onConnected, onDisconnected, debounce }
+  const { only, except, onRefresh, onMessage, onConnected, onDisconnected, debounce = 100, enabled = true } = options
+  const optionsRef = useRef({ only, except, onRefresh, onMessage, onConnected, onDisconnected, debounce })
+  optionsRef.current = { only, except, onRefresh, onMessage, onConnected, onDisconnected, debounce }
 
   const [connected, setConnected] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -86,9 +92,11 @@ export function useInertiaCable(
           setConnected(false)
         },
 
-        received(data: RefreshPayload) {
+        received(data: RefreshPayload | MessagePayload) {
           if (data.type === 'refresh') {
-            handleRefresh(data)
+            handleRefresh(data as RefreshPayload)
+          } else if (data.type === 'message') {
+            optionsRef.current.onMessage?.((data as MessagePayload).data)
           }
         },
       }
