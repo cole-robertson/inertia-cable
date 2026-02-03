@@ -253,6 +253,14 @@ const { connected } = useInertiaCable(cable_stream, {
 
 **Automatic catch-up on reconnection:** When a WebSocket connection drops and reconnects (e.g., network interruption or backgrounded tab), the hook automatically triggers a `router.reload()` to fetch any changes missed while disconnected. This only fires on *re*connection — not the initial connect. ActionCable handles the reconnection itself (with exponential backoff); the hook just ensures your props are fresh when it comes back.
 
+Use `connected` to show connection state in the UI:
+
+```tsx
+const { connected } = useInertiaCable(cable_stream, { only: ['messages'] })
+
+if (!connected) return <Banner>Reconnecting…</Banner>
+```
+
 ### Multiple streams on one page
 
 ```tsx
