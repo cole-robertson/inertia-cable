@@ -318,7 +318,7 @@ createInertiaApp({
 
 `getConsumer()` and `setConsumer()` are also exported for low-level access to the ActionCable consumer singleton.
 
-TypeScript types (`RefreshPayload`, `MessagePayload`, `UseInertiaCableOptions`, `UseInertiaCableReturn`, `InertiaCableProviderProps`) are exported from `@inertia-cable/react`.
+TypeScript types (`RefreshPayload`, `MessagePayload`, `CablePayload`, `UseInertiaCableOptions`, `UseInertiaCableReturn`, `InertiaCableProviderProps`) are exported from `@inertia-cable/react`. `CablePayload` is a discriminated union of `RefreshPayload | MessagePayload` for type-safe handling of raw payloads.
 
 ---
 

@@ -1,5 +1,5 @@
 export { useInertiaCable } from './useInertiaCable'
-export type { UseInertiaCableOptions, UseInertiaCableReturn, RefreshPayload, MessagePayload } from './useInertiaCable'
+export type { UseInertiaCableOptions, UseInertiaCableReturn, RefreshPayload, MessagePayload, CablePayload } from './useInertiaCable'
 export { InertiaCableProvider, useInertiaCableConsumer } from './InertiaCableProvider'
 export type { InertiaCableProviderProps } from './InertiaCableProvider'
 export { getConsumer, setConsumer } from './consumer'

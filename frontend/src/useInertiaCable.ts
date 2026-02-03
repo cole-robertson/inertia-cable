@@ -17,6 +17,8 @@ export interface MessagePayload {
   data: Record<string, unknown>
 }
 
+export type CablePayload = RefreshPayload | MessagePayload
+
 export interface UseInertiaCableOptions {
   only?: string[]
   except?: string[]
@@ -92,11 +94,11 @@ export function useInertiaCable(
           setConnected(false)
         },
 
-        received(data: RefreshPayload | MessagePayload) {
+        received(data: CablePayload) {
           if (data.type === 'refresh') {
-            handleRefresh(data as RefreshPayload)
+            handleRefresh(data)
           } else if (data.type === 'message') {
-            optionsRef.current.onMessage?.((data as MessagePayload).data)
+            optionsRef.current.onMessage?.(data.data)
           }
         },
       }
