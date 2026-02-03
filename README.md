@@ -2,7 +2,7 @@
 
 ActionCable broadcast DSL for [Inertia.js](https://inertiajs.com/) Rails applications. Three lines of code to get real-time updates.
 
-InertiaCable broadcasts lightweight JSON signals over ActionCable. The client receives them and calls `router.reload()` to re-fetch props through Inertia's normal HTTP flow. No data travels over the WebSocket — your controller stays the single source of truth.
+InertiaCable broadcasts lightweight JSON signals over ActionCable. The client receives them and calls `router.reload()` to re-fetch props through Inertia's normal HTTP flow — your controller stays the single source of truth. For ephemeral data like job progress or notifications, [direct messages](#direct-messages) stream data over the WebSocket without triggering a reload.
 
 ```
 Model save → after_commit → ActionCable broadcast (signal)
@@ -11,6 +11,8 @@ React hook subscribes → receives signal → router.reload({ only: ['messages']
                                     ↓
 Inertia HTTP request → controller re-evaluates props → React re-renders
 ```
+
+> **Coming from Turbo Streams?** `broadcasts_to` replaces `broadcasts_refreshes_to`, and `broadcast_message_to` covers use cases where you'd reach for `broadcast_append_to` or `broadcast_replace_to` — but without HTML partials, since Inertia reloads props from your controller instead.
 
 ## Table of Contents
 
