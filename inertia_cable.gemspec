@@ -1,7 +1,9 @@
+require_relative "lib/inertia_cable/version"
+
 Gem::Specification.new do |spec|
   spec.name          = "inertia_cable"
-  spec.version       = "0.1.0"
-  spec.authors       = ["Cole Reynolds"]
+  spec.version       = InertiaCable::VERSION
+  spec.authors       = ["Cole Robertson"]
   spec.summary       = "ActionCable broadcast DSL for Inertia Rails"
   spec.description   = "Lightweight ActionCable integration for Inertia.js Rails apps. Broadcasts refresh signals over WebSockets, triggering Inertia router.reload() on the client."
   spec.homepage      = "https://github.com/cole-robertson/inertia-cable"

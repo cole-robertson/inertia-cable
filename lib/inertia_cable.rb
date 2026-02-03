@@ -2,6 +2,8 @@ require "active_support"
 require "active_support/core_ext/module/attribute_accessors"
 require "active_support/core_ext/module/attribute_accessors_per_thread"
 
+require "inertia_cable/version"
+
 module InertiaCable
   mattr_accessor :signed_stream_verifier_key
   mattr_accessor :debounce_delay, default: 0.5
