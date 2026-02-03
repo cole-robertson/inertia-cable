@@ -12,6 +12,26 @@ React hook subscribes → receives signal → router.reload({ only: ['messages']
 Inertia HTTP request → controller re-evaluates props → React re-renders
 ```
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Model DSL](#model-dsl)
+- [Controller Helper](#controller-helper)
+- [React Hook](#react-hook)
+- [Suppressing Broadcasts](#suppressing-broadcasts)
+- [Server-Side Debounce](#server-side-debounce)
+- [Testing](#testing)
+- [Configuration](#configuration)
+- [How It Works](#how-it-works)
+- [Security](#security)
+- [TypeScript Types](#typescript-types)
+- [Advanced React Patterns](#advanced-react-patterns)
+- [Troubleshooting](#troubleshooting)
+- [Requirements](#requirements)
+- [Development](#development)
+- [License](#license)
+
 ## Installation
 
 Add the gem to your Gemfile:
@@ -100,6 +120,20 @@ class Post < ApplicationRecord
 end
 ```
 
+#### `broadcasts_to` (short alias)
+
+`broadcasts_to` is an alias for `broadcasts_refreshes_to`. All options work identically:
+
+```ruby
+class Post < ApplicationRecord
+  belongs_to :board
+
+  broadcasts_to :board
+  broadcasts_to :board, on: [:create, :destroy]
+  broadcasts_to :board, if: :published?
+end
+```
+
 #### Stream resolution
 
 | Argument | How it resolves |
@@ -109,6 +143,28 @@ end
 | `String` | Used as-is |
 | ActiveRecord model | Uses GlobalID (`gid://app/Board/1`) |
 | `Array` | Joins elements with `:` after resolving each |
+
+##### Advanced stream resolution
+
+Each element in a stream is resolved individually:
+
+- **`to_gid_param` vs `to_param`**: If an object responds to `to_gid_param` (ActiveRecord models), that is used. Otherwise `to_param` is called. This means you can pass plain strings, symbols, or models interchangeably.
+- **Nested arrays are flattened**: `[board, [:posts, :active]]` becomes `"gid://app/Board/1:posts:active"`.
+- **`nil` and blank elements are stripped**: `[board, nil, :posts]` becomes `"gid://app/Board/1:posts"`.
+
+```ruby
+# Model (uses to_gid_param → "gid://app/Board/1")
+inertia_cable_stream(board)               # → signed "gid://app/Board/1"
+
+# Symbol (uses to_param → "posts")
+inertia_cable_stream(:posts)              # → signed "posts"
+
+# Compound with nested array
+inertia_cable_stream(board, [:posts, :active])  # → signed "gid://app/Board/1:posts:active"
+
+# nil elements stripped
+inertia_cable_stream(board, nil, :posts)  # → signed "gid://app/Board/1:posts"
+```
 
 #### `on:` — selective events
 
@@ -143,6 +199,38 @@ class Post < ApplicationRecord
 end
 ```
 
+#### `extra:` — custom payload fields
+
+Attach additional data to the broadcast payload. Accepts a `Hash` or a `Proc` that receives the record:
+
+```ruby
+class Post < ApplicationRecord
+  # Static extra fields
+  broadcasts_refreshes_to :board, extra: { priority: "high" }
+
+  # Dynamic extra fields (proc receives the record)
+  broadcasts_refreshes_to :board, extra: ->(post) { { category: post.category } }
+end
+```
+
+The extra data appears in the `extra` field of the broadcast payload and is available to the `onRefresh` callback on the client.
+
+#### `debounce:` — per-model server-side debounce
+
+Route broadcasts through `InertiaCable::Debounce` instead of the default async job:
+
+```ruby
+class Post < ApplicationRecord
+  # Use global InertiaCable.debounce_delay
+  broadcasts_refreshes_to :board, debounce: true
+
+  # Custom delay in seconds
+  broadcasts_refreshes_to :board, debounce: 1.0
+end
+```
+
+This requires a shared cache store (Redis, Memcached, or SolidCache) in multi-process deployments.
+
 ### `broadcasts_refreshes`
 
 Convention-based version that broadcasts to `model_name.plural` (e.g., `"posts"`):
@@ -151,6 +239,17 @@ Convention-based version that broadcasts to `model_name.plural` (e.g., `"posts"`
 class Post < ApplicationRecord
   broadcasts_refreshes                           # broadcasts to "posts"
   broadcasts_refreshes on: [:create, :destroy]   # with options
+end
+```
+
+#### `broadcasts` (short alias)
+
+`broadcasts` is an alias for `broadcasts_refreshes`:
+
+```ruby
+class Post < ApplicationRecord
+  broadcasts                                     # same as broadcasts_refreshes
+  broadcasts on: [:create, :destroy]             # with options
 end
 ```
 
@@ -170,7 +269,21 @@ post.broadcast_refresh                       # to model_name.plural
 post.broadcast_refresh_later_to(board)
 post.broadcast_refresh_later_to(board, :posts)
 post.broadcast_refresh_later
+
+# With extra payload data
+post.broadcast_refresh_to(board, extra: { priority: "high" })
+post.broadcast_refresh_later_to(board, extra: { priority: "high" })
+
+# With debounce
+post.broadcast_refresh_later_to(board, debounce: true)
+post.broadcast_refresh_later_to(board, debounce: 2.0)
+
+# With inline condition (block)
+post.broadcast_refresh_to(board) { published? }
+post.broadcast_refresh_later_to(board) { visible? }
 ```
+
+When a block is given, the broadcast is skipped if the block returns a falsy value. The block is evaluated in the context of the record instance.
 
 ### Broadcast payload
 
@@ -183,6 +296,19 @@ Every broadcast sends this JSON:
   "id": 42,
   "action": "create",
   "timestamp": "2026-02-02T18:15:19+00:00"
+}
+```
+
+When `extra:` is used, an additional field is included:
+
+```json
+{
+  "type": "refresh",
+  "model": "Message",
+  "id": 42,
+  "action": "create",
+  "timestamp": "2026-02-02T18:15:19+00:00",
+  "extra": { "priority": "high" }
 }
 ```
 
@@ -266,21 +392,33 @@ if (!connected) {
 
 When a WebSocket connection drops and reconnects (e.g., after a network interruption or backgrounded tab), the hook automatically triggers a `router.reload()` to catch up on any changes that were missed while disconnected. This only fires on *re*connection — not on the initial connection.
 
+**Why it works:** ActionCable handles reconnection automatically (with exponential backoff). The hook tracks whether it has connected before via a ref (`hasConnectedRef`). On the first `connected()` callback, it sets the flag; on subsequent `connected()` callbacks, it knows a disconnect happened and triggers a reload. The reload is debounced through the same timer, so even if reconnection triggers alongside a real broadcast signal, only one reload fires.
+
 ### `InertiaCableProvider`
 
-Optional context provider for a custom ActionCable URL (default is `/cable`):
+Optional context provider for a custom ActionCable consumer. Use it when you need:
+
+- A custom cable URL (different from the default `/cable`)
+- A separate cable server (e.g., `wss://cable.example.com/cable`)
+- An authenticated WebSocket endpoint
 
 ```tsx
 import { InertiaCableProvider } from '@inertia-cable/react'
+import { createInertiaApp } from '@inertiajs/react'
 
-function App({ children }) {
-  return (
-    <InertiaCableProvider url="wss://cable.example.com/cable">
-      {children}
-    </InertiaCableProvider>
-  )
-}
+createInertiaApp({
+  // ...
+  setup({ el, App, props }) {
+    createRoot(el).render(
+      <InertiaCableProvider url="wss://cable.example.com/cable">
+        <App {...props} />
+      </InertiaCableProvider>
+    )
+  },
+})
 ```
+
+**Fallback behavior:** If no `InertiaCableProvider` is present in the component tree, the hook falls back to a module-level singleton consumer (created via `getConsumer()`), which connects to the default `/cable` endpoint. You only need the provider when the default isn't sufficient.
 
 ### `getConsumer` / `setConsumer`
 
@@ -324,6 +462,9 @@ InertiaCable.debounce_delay = 0.5  # seconds (default)
 
 # Use debounced broadcast explicitly
 InertiaCable::Debounce.broadcast("my_stream", payload)
+
+# With custom delay override
+InertiaCable::Debounce.broadcast("my_stream", payload, delay: 2.0)
 ```
 
 ---
@@ -412,6 +553,150 @@ InertiaCable.debounce_delay = 0.5
 7. **React** re-renders with new props
 
 The key insight: no data is sent over the WebSocket. It's purely a notification channel. All data flows through Inertia's existing HTTP request cycle, so your controller remains the single source of truth.
+
+---
+
+## Security
+
+InertiaCable uses Rails' `MessageVerifier` (HMAC-SHA256) to sign stream tokens. Here's how the security model works:
+
+- **Stream tokens are signed** using `secret_key_base` (plus a purpose-specific salt). The token generated by `inertia_cable_stream(chat)` in the controller is a cryptographic signature over the stream name — it cannot be forged or tampered with.
+- **Tokens are verified server-side** when the client subscribes via `StreamChannel`. If the signature is invalid or has been altered, the subscription is rejected immediately.
+- **No data travels over the WebSocket.** The broadcast payload is a lightweight signal (`{ type: "refresh", ... }`). Actual data is fetched via Inertia's normal HTTP cycle, which goes through your controller (and its authorization logic) on every reload.
+- **Rotate `secret_key_base`** per Rails defaults. If you use Rails' built-in credentials or `secret_key_base` rotation, stream tokens rotate automatically. Existing WebSocket subscriptions continue to work until they reconnect.
+
+---
+
+## TypeScript Types
+
+The following types are exported from `@inertia-cable/react` and can be imported for use in your application:
+
+```typescript
+import type {
+  RefreshPayload,
+  UseInertiaCableOptions,
+  UseInertiaCableReturn,
+} from '@inertia-cable/react'
+
+import type { InertiaCableProviderProps } from '@inertia-cable/react'
+```
+
+| Type | Description |
+|------|-------------|
+| `RefreshPayload` | Shape of the broadcast signal (`type`, `model`, `id`, `action`, `timestamp`, `extra?`) |
+| `UseInertiaCableOptions` | Options accepted by `useInertiaCable` (`only`, `except`, `onRefresh`, etc.) |
+| `UseInertiaCableReturn` | Return value of `useInertiaCable` (`{ connected }`) |
+| `InertiaCableProviderProps` | Props for `InertiaCableProvider` (`url?`, `children`) |
+
+---
+
+## Advanced React Patterns
+
+### Conditional subscription with `enabled`
+
+Pause the subscription when the component isn't visible or relevant:
+
+```tsx
+function ChatShow({ chat, messages, cable_stream }) {
+  const isVisible = usePageVisibility()
+
+  useInertiaCable(cable_stream, {
+    only: ['messages'],
+    enabled: isVisible, // pauses subscription when tab is hidden
+  })
+
+  return <MessageList messages={messages} />
+}
+```
+
+### Multiple hooks on one page
+
+Subscribe to different streams for different prop groups:
+
+```tsx
+function Dashboard({ stats, notifications, stats_stream, notifications_stream }) {
+  useInertiaCable(stats_stream, { only: ['stats'] })
+  useInertiaCable(notifications_stream, { only: ['notifications'] })
+
+  return (
+    <>
+      <StatsPanel stats={stats} />
+      <NotificationList notifications={notifications} />
+    </>
+  )
+}
+```
+
+### Custom `onRefresh` for optimistic UI or toast notifications
+
+Use the callback to trigger side effects before the reload:
+
+```tsx
+function ChatShow({ chat, messages, cable_stream }) {
+  useInertiaCable(cable_stream, {
+    only: ['messages'],
+    onRefresh: (data) => {
+      if (data.action === 'create') {
+        toast.info('New message received')
+      }
+      // Access extra payload data if the server sent it
+      if (data.extra?.priority === 'high') {
+        toast.warn('High priority update!')
+      }
+    },
+  })
+
+  return <MessageList messages={messages} />
+}
+```
+
+---
+
+## Troubleshooting
+
+### `router.reload()` crashes with `only`/`except`
+
+Pass arrays, not `undefined`. If you conditionally set `only` or `except`, make sure you pass an actual array or omit the option entirely:
+
+```tsx
+// Bad — passing undefined crashes router.reload()
+useInertiaCable(stream, { only: someCondition ? ['messages'] : undefined })
+
+// Good — omit the key or always pass an array
+useInertiaCable(stream, { ...(someCondition ? { only: ['messages'] } : {}) })
+```
+
+### Cache store for server-side debounce
+
+Server-side debounce (`InertiaCable::Debounce`) uses `Rails.cache`. In multi-process deployments (Puma with workers, multiple servers), the default `MemoryStore` is per-process and won't debounce across processes. Use a shared store:
+
+```ruby
+# config/environments/production.rb
+config.cache_store = :redis_cache_store, { url: ENV["REDIS_URL"] }
+```
+
+### Vite HMR stale cache
+
+If hot-module replacement stops working or you see stale behavior after updating `@inertia-cable/react`:
+
+```bash
+# Kill Vite dev server, clear cache, restart
+rm -rf node_modules/.vite
+bin/vite dev
+```
+
+### Stream token mismatch
+
+The stream signed in the controller must match the stream the model broadcasts to. If your model broadcasts to `:board` (which resolves to the board's GlobalID) but your controller signs a different object, clients won't receive updates.
+
+```ruby
+# Model
+broadcasts_refreshes_to :board  # broadcasts to gid://app/Board/1
+
+# Controller — must sign the same board object
+inertia_cable_stream(@post.board)  # signs gid://app/Board/1 ✓
+inertia_cable_stream(@post)        # signs gid://app/Post/1 ✗ — wrong stream
+```
 
 ---
 

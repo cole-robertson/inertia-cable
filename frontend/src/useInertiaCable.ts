@@ -9,6 +9,7 @@ export interface RefreshPayload {
   id: number | null
   action: string
   timestamp: string
+  extra?: Record<string, unknown>
 }
 
 export interface UseInertiaCableOptions {

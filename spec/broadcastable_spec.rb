@@ -57,6 +57,42 @@ class LambdaStreamPost < ActiveRecord::Base
   broadcasts_refreshes_to ->(post) { [post.board, :posts] }
 end
 
+class AliasPost < ActiveRecord::Base
+  self.table_name = "posts"
+  belongs_to :board, foreign_key: :board_id
+  broadcasts_to :board
+end
+
+class AliasConventionPost < ActiveRecord::Base
+  self.table_name = "posts"
+  belongs_to :board, foreign_key: :board_id
+  broadcasts
+end
+
+class ExtraHashPost < ActiveRecord::Base
+  self.table_name = "posts"
+  belongs_to :board, foreign_key: :board_id
+  broadcasts_refreshes_to :board, extra: { priority: "high" }
+end
+
+class ExtraProcPost < ActiveRecord::Base
+  self.table_name = "posts"
+  belongs_to :board, foreign_key: :board_id
+  broadcasts_refreshes_to :board, extra: ->(post) { { title_length: post.title.length } }
+end
+
+class DebouncedPost < ActiveRecord::Base
+  self.table_name = "posts"
+  belongs_to :board, foreign_key: :board_id
+  broadcasts_refreshes_to :board, debounce: true
+end
+
+class CustomDelayDebouncedPost < ActiveRecord::Base
+  self.table_name = "posts"
+  belongs_to :board, foreign_key: :board_id
+  broadcasts_refreshes_to :board, debounce: 2.0
+end
+
 RSpec.describe InertiaCable::Broadcastable do
   let(:board) { Board.create!(name: "Test Board") }
 
@@ -254,6 +290,153 @@ RSpec.describe InertiaCable::Broadcastable do
         args = enqueued_jobs.last["arguments"]
         expect(args.first).to eq("posts")
       end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # broadcasts_to / broadcasts aliases
+  # ---------------------------------------------------------------------------
+  describe ".broadcasts_to alias" do
+    it "works the same as broadcasts_refreshes_to" do
+      expect { AliasPost.create!(title: "Hello", board: board) }
+        .to change { enqueued_jobs.size }.by(1)
+
+      expect(enqueued_jobs.last["job_class"]).to eq("InertiaCable::BroadcastJob")
+    end
+  end
+
+  describe ".broadcasts alias" do
+    it "works the same as broadcasts_refreshes" do
+      expect { AliasConventionPost.create!(title: "Hello", board_id: board.id) }
+        .to change { enqueued_jobs.size }.by(1)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # extra: option
+  # ---------------------------------------------------------------------------
+  describe "extra: option" do
+    it "includes extra hash in payload" do
+      ExtraHashPost.create!(title: "Hello", board: board)
+      payload = enqueued_jobs.last["arguments"].last
+
+      expect(payload["extra"]).to include("priority" => "high")
+    end
+
+    it "evaluates proc extra with record" do
+      ExtraProcPost.create!(title: "Hello", board: board)
+      payload = enqueued_jobs.last["arguments"].last
+
+      expect(payload["extra"]).to include("title_length" => 5)
+    end
+
+    it "omits extra key when not provided" do
+      Post.create!(title: "Hello", board: board)
+      payload = enqueued_jobs.last["arguments"].last
+
+      expect(payload).not_to have_key("extra")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # debounce: option (macro level)
+  # ---------------------------------------------------------------------------
+  describe "debounce: option" do
+    it "calls Debounce.broadcast with default delay when debounce: true" do
+      expect(InertiaCable::Debounce).to receive(:broadcast)
+        .with(anything, hash_including(type: "refresh"), delay: nil)
+
+      DebouncedPost.create!(title: "Hello", board: board)
+    end
+
+    it "calls Debounce.broadcast with custom delay" do
+      expect(InertiaCable::Debounce).to receive(:broadcast)
+        .with(anything, hash_including(type: "refresh"), delay: 2.0)
+
+      CustomDelayDebouncedPost.create!(title: "Hello", board: board)
+    end
+
+    it "does not enqueue a job when using debounce" do
+      allow(InertiaCable::Debounce).to receive(:broadcast)
+
+      expect { DebouncedPost.create!(title: "Hello", board: board) }
+        .not_to change { enqueued_jobs.size }
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Block support on instance methods
+  # ---------------------------------------------------------------------------
+  describe "block support" do
+    describe "#broadcast_refresh_to with block" do
+      it "broadcasts when block returns truthy" do
+        post = Post.create!(title: "Hello", board: board, published: true)
+
+        expect(InertiaCable).to receive(:broadcast)
+          .with([board], hash_including(type: "refresh"))
+
+        post.broadcast_refresh_to(board) { true }
+      end
+
+      it "skips broadcast when block returns falsy" do
+        post = Post.create!(title: "Hello", board: board)
+
+        expect(InertiaCable).not_to receive(:broadcast)
+
+        post.broadcast_refresh_to(board) { false }
+      end
+
+      it "evaluates block in instance context" do
+        post = Post.create!(title: "Hello", board: board, published: true)
+
+        expect(InertiaCable).to receive(:broadcast)
+
+        post.broadcast_refresh_to(board) { title == "Hello" }
+      end
+    end
+
+    describe "#broadcast_refresh_later_to with block" do
+      it "enqueues when block returns truthy" do
+        post = Post.create!(title: "Hello", board: board)
+        enqueued_jobs.clear
+
+        post.broadcast_refresh_later_to(board) { true }
+
+        expect(enqueued_jobs.size).to eq(1)
+      end
+
+      it "skips enqueue when block returns falsy" do
+        post = Post.create!(title: "Hello", board: board)
+        enqueued_jobs.clear
+
+        post.broadcast_refresh_later_to(board) { false }
+
+        expect(enqueued_jobs.size).to eq(0)
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # extra: on instance methods
+  # ---------------------------------------------------------------------------
+  describe "extra: on instance methods" do
+    it "includes extra in broadcast_refresh_to payload" do
+      post = Post.create!(title: "Hello", board: board)
+
+      expect(InertiaCable).to receive(:broadcast)
+        .with([board], hash_including(type: "refresh", extra: { priority: "high" }))
+
+      post.broadcast_refresh_to(board, extra: { priority: "high" })
+    end
+
+    it "includes extra in broadcast_refresh_later_to payload" do
+      post = Post.create!(title: "Hello", board: board)
+      enqueued_jobs.clear
+
+      post.broadcast_refresh_later_to(board, extra: { priority: "high" })
+
+      payload = enqueued_jobs.last["arguments"].last
+      expect(payload["extra"]).to include("priority" => "high")
     end
   end
 

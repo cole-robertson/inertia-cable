@@ -1,10 +1,11 @@
 module InertiaCable
   module Debounce
-    def self.broadcast(stream_name, payload)
+    def self.broadcast(stream_name, payload, delay: nil)
+      delay = delay || InertiaCable.debounce_delay
       cache_key = "inertia_cable:debounce:#{stream_name}"
       return if Rails.cache.exist?(cache_key)
 
-      Rails.cache.write(cache_key, true, expires_in: InertiaCable.debounce_delay)
+      Rails.cache.write(cache_key, true, expires_in: delay)
       ActionCable.server.broadcast(stream_name, payload)
     end
   end
