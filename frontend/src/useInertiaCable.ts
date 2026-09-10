@@ -53,6 +53,7 @@ export function useInertiaCable(
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
       router.reload({
+        preserveErrors: true,
         ...(opts.only ? { only: opts.only } : {}),
         ...(opts.except ? { except: opts.except } : {}),
       })

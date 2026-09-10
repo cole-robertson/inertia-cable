@@ -1,5 +1,5 @@
 import { Head, useForm } from "@inertiajs/react"
-import { useInertiaCable } from "@/lib/inertia-cable"
+import { useInertiaCable } from "@inertia-cable/react"
 import AppLayout from "@/layouts/app-layout"
 
 interface Message {

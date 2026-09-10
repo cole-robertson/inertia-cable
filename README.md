@@ -52,6 +52,14 @@ Optionally run the install generator:
 rails generate inertia_cable:install
 ```
 
+Version 0.3 targets **Inertia.js 3 and React 19**, and ships ES modules only. Applications on Inertia 1 or 2 should stay on `@inertia-cable/react@0.2` until upgrading.
+
+### Upgrading from 0.2
+
+Upgrade `@inertiajs/react` to `^3.0.0`, React and React DOM to `^19.0.0`, and `inertia_rails` to `~> 3.19` or newer compatible 3.x. Follow the [Inertia Rails v3 upgrade guide](https://inertia-rails.dev/guide/upgrade-guide) for application configuration changes. Then upgrade `inertia_cable` and `@inertia-cable/react` to 0.3.
+
+The hook and Ruby broadcast APIs are unchanged. Use ESM `import` statements; CommonJS `require()` is no longer supported. Background refreshes now preserve existing Inertia page validation errors, including reconnect catch-up reloads.
+
 ## Quick Start
 
 ### 1. Model — declare what broadcasts
@@ -515,7 +523,7 @@ InertiaCable.debounce_delay = 0.5                        # server-side debounce 
 
 ## Security
 
-Stream tokens are HMAC-SHA256 signed using `secret_key_base` and verified server-side on subscription. Invalid tokens are rejected. No data travels over the WebSocket — actual data is fetched via Inertia's normal HTTP cycle, which runs through your controller and its authorization logic on every reload. Token rotation follows `secret_key_base` rotation.
+Stream tokens are HMAC-SHA256 signed using `secret_key_base` and verified server-side on subscription. Invalid tokens are rejected. Refresh signals carry model metadata and any `extra` fields over the WebSocket; page props are fetched through your controller and its authorization logic on every reload. Direct messages send their `data` payload over the WebSocket without running controller authorization again. Only issue stream tokens to authorized users, and ensure every subscriber is allowed to receive the stream's metadata and direct messages. Token rotation follows `secret_key_base` rotation.
 
 ---
 
@@ -534,17 +542,9 @@ inertia_cable_stream(@post.board)  # ✓ signs gid://app/Board/1
 inertia_cable_stream(@post)        # ✗ signs gid://app/Post/1
 ```
 
-### `only`/`except` crashes
+### Reloading selected props
 
-Always pass arrays, never `undefined`:
-
-```tsx
-// Bad
-useInertiaCable(stream, { only: someCondition ? ['messages'] : undefined })
-
-// Good
-useInertiaCable(stream, { ...(someCondition ? { only: ['messages'] } : {}) })
-```
+Pass arrays for `only` and `except`. Omitted or `undefined` filters are safely ignored. Without either filter, refresh signals reload all normally included props.
 
 ### Server-side debounce not working across processes
 
@@ -560,15 +560,23 @@ config.cache_store = :redis_cache_store, { url: ENV["REDIS_URL"] }
 
 - Ruby >= 3.1
 - Rails >= 7.0 (ActionCable, ActiveJob, ActiveSupport)
-- Inertia.js >= 1.0 with React (`@inertiajs/react`)
+- Inertia.js 3.x (`@inertiajs/react`) with React and React DOM 19.x
+- `inertia_rails` >= 3.19, < 4 for Inertia.js 3 applications
+- An ESM-capable frontend build setup (such as Vite)
 - ActionCable configured with Redis or SolidCable (production) or async (development)
 
 ## Development
 
 ```bash
 bundle install && bundle exec rspec     # Ruby specs
-cd frontend && npm install && npm test  # Frontend
+cd frontend
+npm ci
+npm run typecheck
+npm test
+npm run build
 ```
+
+The integration app imports the built package through a local file dependency. After building `frontend`, run `npm ci`, `npm run check`, and `npx vite build` in `integration_test`. Rebuild the package after changing its source; use `npm run dev` in `frontend` while developing the example app.
 
 ## License
 

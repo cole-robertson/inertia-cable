@@ -20,6 +20,9 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        inertia: [locked, '3.0.0']
     steps:
       - uses: actions/checkout@v4
 
@@ -32,8 +35,32 @@ jobs:
       - run: npm ci
         working-directory: frontend
 
+      - name: Install minimum supported Inertia version
+        if: matrix.inertia != 'locked'
+        run: npm install --no-save --package-lock=false @inertiajs/react@${{ matrix.inertia }} @inertiajs/core@${{ matrix.inertia }}
+        working-directory: frontend
+
       - run: npm run typecheck
+        working-directory: frontend
+
+      - run: npm test
         working-directory: frontend
 
       - run: npm run build
         working-directory: frontend
+
+      - name: Verify ESM package import
+        run: node --input-type=module -e "import('@inertia-cable/react')"
+        working-directory: frontend
+
+      - run: npm ci
+        working-directory: integration_test
+
+      - run: npm run check
+        working-directory: integration_test
+
+      - run: npx vite build
+        working-directory: integration_test
+
+      - run: npx vite build --ssr
+        working-directory: integration_test
