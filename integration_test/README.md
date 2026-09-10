@@ -20,6 +20,8 @@ See also:
 
 ## Setup
 
+This app uses Inertia.js 3, React 19, and the local `@inertia-cable/react` package. From the repository's `frontend` directory, run `npm ci && npm run build` before installing or starting this app. Run `npm run dev` there to rebuild the package as you edit it.
+
 1. Clone this repository
 2. Setup dependencies & run the server:
    ```bash

@@ -4,6 +4,9 @@ import { defineConfig } from "vite"
 import RubyPlugin from "vite-plugin-ruby"
 
 export default defineConfig({
+  resolve: {
+    dedupe: ["react", "react-dom", "@inertiajs/react", "@inertiajs/core"],
+  },
   ssr: {
     // prebuilds ssr.js so we can drop node_modules from the resulting container
     noExternal: true,
