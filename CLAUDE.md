@@ -65,7 +65,7 @@ npm run dev                       # Build in watch mode
 
 CI runs on every PR and push to main (`.github/workflows/ci.yml`):
 - **ruby-specs**: Ruby 3.3, `bundle exec rspec`
-- **frontend**: Node 22, tests/builds against locked Inertia and 3.0.0; `npm ci` + `npm run typecheck` + `npm test` + `npm run build`, ESM import smoke check, and integration app typecheck/client/SSR builds
+- **frontend**: Node 22, tests/builds against locked Inertia and 3.7.0; `npm ci` + `npm run typecheck` + `npm test` + `npm run build`, ESM import smoke check, and integration app typecheck/client/SSR builds
 
 ## Architecture & Key Patterns
 
@@ -116,9 +116,9 @@ CI runs on every PR and push to main (`.github/workflows/ci.yml`):
 - **Ruby**: >= 3.1
 - **Rails**: >= 7.0 (actioncable, activejob, activesupport, railties)
 - **React**: 19.x
-- **@inertiajs/react**: 3.x
+- **@inertiajs/react**: >= 3.7, < 4
 - **@rails/actioncable**: >= 7.0
-- **Current version**: 0.3.0 (kept in sync between `lib/inertia_cable/version.rb` and `frontend/package.json`)
+- **Current version**: 0.4.0 (kept in sync between `lib/inertia_cable/version.rb` and `frontend/package.json`)
 
 ## Code Style
 

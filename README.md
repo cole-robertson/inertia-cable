@@ -52,7 +52,11 @@ Optionally run the install generator:
 rails generate inertia_cable:install
 ```
 
-Version 0.3 targets **Inertia.js 3 and React 19**, and ships ES modules only. Applications on Inertia 1 or 2 should stay on `@inertia-cable/react@0.2` until upgrading.
+Version 0.4 targets **Inertia.js 3.7+ and React 19**, and ships ES modules only. Applications on Inertia 1 or 2 should stay on `@inertia-cable/react@0.2` until upgrading.
+
+### Upgrading from 0.3
+
+Upgrade `@inertiajs/react` to `^3.7.0`. Existing subscriptions keep working. The new coordinator uses Inertia's built-in rest-mode polling; the Ruby broadcast protocol is unchanged and works with the 0.3 gem.
 
 ### Upgrading from 0.2
 
@@ -251,7 +255,47 @@ The token is verified server-side when the client subscribes — invalid or tamp
 
 ### `useInertiaCable(signedStreamName, options?)`
 
-Returns `{ connected }` — a boolean indicating whether the WebSocket subscription is active.
+Returns `{ connected, status, refreshing, lastRefreshedAt, refreshError }`. `status` is `disabled`, `connecting`, `connected`, `reconnecting`, or `rejected`. `lastRefreshedAt` is a completion timestamp in milliseconds, initially `null`; a connected socket alone does not prove fresh page data. `onRejected` observes subscription rejection.
+
+The optional `refresh(context)` callback replaces the default reload. Its context contains `reason` (`broadcast` or `reconnect`), `only`, and `except`. Return a promise to track completion/failure in this hook, or return void when another coordinator owns freshness. `onRefresh(payload)` remains an observer of broadcast signals and does not replace reloads.
+
+### Shared refresh coordination
+
+Use one coordinator per mounted page and share it across subscriptions:
+
+```tsx
+import { router } from '@inertiajs/react'
+import { useInertiaCable, useInertiaRefresh } from '@inertia-cable/react'
+
+const live = useInertiaRefresh({
+  scope: `${site.id}:${pageUrl}`,
+  only: ['orders', 'shipments'],
+  debounce: 100,
+  pollInterval: 60_000,
+})
+useInertiaCable(orderStream, {
+  only: ['orders'],
+  debounce: 0,
+  refresh: ({ only }) => live.refresh(only),
+  onConnected: () => live.refresh(),
+})
+useInertiaCable(shipmentStream, {
+  only: ['shipments'],
+  debounce: 0,
+  refresh: ({ only }) => live.refresh(only),
+})
+
+// Route scope-changing controls through the barrier.
+const selectSite = (id: number) => live.visit(() => {
+  router.get('/operations', { site_id: id }, { preserveState: true })
+})
+```
+
+`useInertiaRefresh({ scope, only, enabled?, debounce?, pollInterval? })` returns `refresh(keys?)`, `visit(run)`, `refreshing`, `lastRefreshedAt`, and `error`. It unions invalidated prop keys, permits one owned reload at a time, and retains a trailing refresh when signals arrive during a request. The default debounce is 100ms; polling is opt-in. Hidden tabs pause polling and catch up when visible. An optional `onConnected` catch-up also covers changes between the initial HTTP response and subscription.
+
+Use `live`'s freshness fields when delegating with a void callback. `scope` must change with the selected site/filter. `visit(run)` cancels the coordinator's request or waits for response processing to finish before running navigation, preserving the original closure and callbacks. Automatic router listeners also yield to other visits, but cannot delay a visit already started elsewhere: route same-page scope changes through `visit`. It never cancels unrelated requests. Inertia continues to own HTTP, prop merging, form state, and polling.
+
+For non-hook integration, `createInertiaRefresh({ only, debounce?, pollInterval? })` exposes the same `refresh`/`visit` operations plus `getSnapshot()`, `subscribe(listener)` (returns unsubscribe), and `dispose()`. Create it only in a browser lifecycle and always dispose it on scope changes/unmount. The React hook handles this lifecycle, including SSR.
 
 ```tsx
 const { connected } = useInertiaCable(cable_stream, {
@@ -560,7 +604,7 @@ config.cache_store = :redis_cache_store, { url: ENV["REDIS_URL"] }
 
 - Ruby >= 3.1
 - Rails >= 7.0 (ActionCable, ActiveJob, ActiveSupport)
-- Inertia.js 3.x (`@inertiajs/react`) with React and React DOM 19.x
+- Inertia.js >= 3.7, < 4 (`@inertiajs/react`) with React and React DOM 19.x
 - `inertia_rails` >= 3.19, < 4 for Inertia.js 3 applications
 - An ESM-capable frontend build setup (such as Vite)
 - ActionCable configured with Redis or SolidCable (production) or async (development)

@@ -6,6 +6,7 @@ import { setConsumer } from '../src/consumer'
 import { useInertiaCable, type CablePayload } from '../src/useInertiaCable'
 
 interface Callbacks {
+  rejected(): void
   connected(): void
   disconnected(): void
   received(data: CablePayload): void
@@ -48,9 +49,9 @@ describe('useInertiaCable', () => {
     expect(router.reload).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(1))
     expect(router.reload).toHaveBeenCalledOnce()
-    expect(router.reload).toHaveBeenCalledWith({
+    expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({
       only: ['messages'], preserveErrors: true,
-    })
+    }))
   })
 
   it('passes except and safely omits undefined prop filters', () => {
@@ -59,7 +60,7 @@ describe('useInertiaCable', () => {
       callbacks.received(refresh)
       vi.runAllTimers()
     })
-    expect(router.reload).toHaveBeenCalledWith({ except: ['metadata'], preserveErrors: true })
+    expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ except: ['metadata'], preserveErrors: true }))
   })
 
   it('reloads on reconnection but not the initial connection', () => {
@@ -74,7 +75,7 @@ describe('useInertiaCable', () => {
       vi.runAllTimers()
     })
     expect(router.reload).toHaveBeenCalledOnce()
-    expect(router.reload).toHaveBeenCalledWith({ preserveErrors: true })
+    expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ preserveErrors: true }))
   })
 
   it('delivers every direct message without scheduling a reload', () => {
@@ -87,6 +88,82 @@ describe('useInertiaCable', () => {
     })
     expect(onMessage.mock.calls).toEqual([[{ progress: 1 }], [{ progress: 2 }]])
     expect(router.reload).not.toHaveBeenCalled()
+  })
+
+  it('delegates broadcast and reconnect invalidations without also reloading', () => {
+    const customRefresh = vi.fn()
+    const { result } = renderHook(() => useInertiaCable('signed', { refresh: customRefresh, only: ['messages'] }))
+    act(() => { callbacks.connected(); callbacks.received(refresh); vi.runAllTimers() })
+    expect(customRefresh).toHaveBeenLastCalledWith(expect.objectContaining({ reason: 'broadcast', only: ['messages'] }))
+    act(() => callbacks.disconnected())
+    expect(result.current.status).toBe('reconnecting')
+    act(() => { callbacks.connected(); vi.runAllTimers() })
+    expect(customRefresh).toHaveBeenLastCalledWith(expect.objectContaining({ reason: 'reconnect' }))
+    expect(router.reload).not.toHaveBeenCalled()
+    expect(result.current.lastRefreshedAt).toBeNull()
+  })
+
+  it('reports rejection and resets status when disabled', () => {
+    const onRejected = vi.fn()
+    const { result, rerender } = renderHook(({ enabled }) => useInertiaCable('signed', { enabled, onRejected }), { initialProps: { enabled: true } })
+    act(() => callbacks.rejected())
+    expect(result.current.status).toBe('rejected')
+    expect(onRejected).toHaveBeenCalledOnce()
+    rerender({ enabled: false })
+    expect(result.current.status).toBe('disabled')
+  })
+
+  it('reports an asynchronous refresh failure without claiming fresh data', async () => {
+    const { result } = renderHook(() => useInertiaCable('signed', { refresh: async () => { throw new Error('Offline') } }))
+    await act(async () => { callbacks.received(refresh); vi.runAllTimers() })
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.lastRefreshedAt).toBeNull()
+    expect(result.current.refreshError).toContain('Refresh failed')
+  })
+
+  it('tracks completion of an asynchronous custom refresh', async () => {
+    let finish!: () => void
+    const customRefresh = () => new Promise<void>((resolve) => { finish = resolve })
+    const { result } = renderHook(() => useInertiaCable('signed', { refresh: customRefresh }))
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    expect(result.current.refreshing).toBe(true)
+    expect(result.current.lastRefreshedAt).toBeNull()
+    await act(async () => finish())
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.lastRefreshedAt).not.toBeNull()
+  })
+
+  it('does not claim a vetoed reload is in flight', () => {
+    // A vetoed Inertia visit never invokes onStart or onFinish.
+    const { result } = renderHook(() => useInertiaCable('signed'))
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    expect(result.current.refreshing).toBe(false)
+  })
+
+  it('keeps refreshing until overlapping callbacks settle and ignores older outcomes', async () => {
+    const pending: { resolve: () => void, reject: (error: Error) => void }[] = []
+    const customRefresh = () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject }))
+    const { result } = renderHook(() => useInertiaCable('signed', { refresh: customRefresh }))
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    await act(async () => pending[1].resolve())
+    expect(result.current.refreshing).toBe(true)
+    const refreshed = result.current.lastRefreshedAt
+    await act(async () => pending[0].reject(new Error('Old request failed')))
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.refreshError).toBeNull()
+    expect(result.current.lastRefreshedAt).toBe(refreshed)
+  })
+
+  it('ignores promise completions from a previous stream', async () => {
+    let finish!: () => void
+    const customRefresh = () => new Promise<void>((resolve) => { finish = resolve })
+    const { result, rerender } = renderHook(({ stream }) => useInertiaCable(stream, { refresh: customRefresh }), { initialProps: { stream: 'first' } })
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    rerender({ stream: 'second' })
+    await act(async () => finish())
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.lastRefreshedAt).toBeNull()
   })
 
   it('cancels pending reloads and unsubscribes when navigating away', () => {
