@@ -62,6 +62,8 @@ export function useInertiaCable(
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const generationRef = useRef(0)
+  const pendingRefreshes = useRef(0)
+  const refreshSequence = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasConnectedRef = useRef(false)
 
@@ -72,29 +74,44 @@ export function useInertiaCable(
     timerRef.current = setTimeout(() => {
       const opts = optionsRef.current
       const generation = generationRef.current
+      const sequence = ++refreshSequence.current
       const current = () => generation === generationRef.current
-      const success = () => { if (current()) { setLastRefreshedAt(Date.now()); setRefreshError(null) } }
-      const failure = () => { if (current()) setRefreshError('Refresh failed. Retrying on the next update.') }
+      const latest = () => current() && sequence === refreshSequence.current
+      const success = () => { if (latest()) { setLastRefreshedAt(Date.now()); setRefreshError(null) } }
+      const failure = () => { if (latest()) setRefreshError('Refresh failed. Retrying on the next update.') }
+      let started = false
+      const start = () => {
+        if (!current() || started) return
+        started = true
+        pendingRefreshes.current += 1
+        setRefreshing(true)
+      }
+      const finish = () => {
+        if (!current() || !started) return
+        started = false
+        pendingRefreshes.current -= 1
+        setRefreshing(pendingRefreshes.current > 0)
+      }
       if (opts.refresh) {
         try {
           const result = opts.refresh({ reason, only: opts.only, except: opts.except })
           // A void callback delegates lifecycle/freshness to its coordinator.
           if (result) {
-            setRefreshing(true)
-            void Promise.resolve(result).then(success, failure).finally(() => { if (current()) setRefreshing(false) })
+            start()
+            void Promise.resolve(result).then(success, failure).finally(finish)
           }
         } catch { failure() }
         return
       }
-      setRefreshing(true)
       router.reload({
         preserveErrors: true,
         ...(opts.only ? { only: opts.only } : {}),
         ...(opts.except ? { except: opts.except } : {}),
+        onStart: start,
         onSuccess: success,
         onError: success,
         onNetworkError: failure,
-        onFinish: () => { if (current()) setRefreshing(false) },
+        onFinish: finish,
       })
     }, optionsRef.current.debounce)
   }, [])
@@ -110,6 +127,7 @@ export function useInertiaCable(
     setLastRefreshedAt(null)
     setRefreshError(null)
     setRefreshing(false)
+    pendingRefreshes.current = 0
     if (!signedStreamName || !enabled) return
     let alive = true
 

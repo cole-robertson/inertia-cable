@@ -133,6 +133,39 @@ describe('useInertiaCable', () => {
     expect(result.current.lastRefreshedAt).not.toBeNull()
   })
 
+  it('does not claim a vetoed reload is in flight', () => {
+    // A vetoed Inertia visit never invokes onStart or onFinish.
+    const { result } = renderHook(() => useInertiaCable('signed'))
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    expect(result.current.refreshing).toBe(false)
+  })
+
+  it('keeps refreshing until overlapping callbacks settle and ignores older outcomes', async () => {
+    const pending: { resolve: () => void, reject: (error: Error) => void }[] = []
+    const customRefresh = () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject }))
+    const { result } = renderHook(() => useInertiaCable('signed', { refresh: customRefresh }))
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    await act(async () => pending[1].resolve())
+    expect(result.current.refreshing).toBe(true)
+    const refreshed = result.current.lastRefreshedAt
+    await act(async () => pending[0].reject(new Error('Old request failed')))
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.refreshError).toBeNull()
+    expect(result.current.lastRefreshedAt).toBe(refreshed)
+  })
+
+  it('ignores promise completions from a previous stream', async () => {
+    let finish!: () => void
+    const customRefresh = () => new Promise<void>((resolve) => { finish = resolve })
+    const { result, rerender } = renderHook(({ stream }) => useInertiaCable(stream, { refresh: customRefresh }), { initialProps: { stream: 'first' } })
+    act(() => { callbacks.received(refresh); vi.runAllTimers() })
+    rerender({ stream: 'second' })
+    await act(async () => finish())
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.lastRefreshedAt).toBeNull()
+  })
+
   it('cancels pending reloads and unsubscribes when navigating away', () => {
     const { unmount } = renderHook(() => useInertiaCable('signed'))
     act(() => callbacks.received(refresh))
