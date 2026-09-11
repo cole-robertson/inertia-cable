@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        inertia: [locked, '3.0.0']
+        inertia: [locked, '3.7.0']
     steps:
       - uses: actions/checkout@v4
 

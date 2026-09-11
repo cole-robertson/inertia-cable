@@ -1,6 +1,6 @@
 {
   "name": "@inertia-cable/react",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "React hooks for InertiaCable - ActionCable integration for Inertia.js",
   "type": "module",
   "main": "dist/index.js",
@@ -23,13 +23,13 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
   },
   "peerDependencies": {
-    "@inertiajs/react": "^3.0.0",
+    "@inertiajs/react": "^3.7.0",
     "@rails/actioncable": ">=7.0.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
-    "@inertiajs/core": "^3.0.0",
-    "@inertiajs/react": "^3.0.0",
+    "@inertiajs/core": "^3.7.0",
+    "@inertiajs/react": "^3.7.0",
     "@rails/actioncable": "^7.0.0",
     "@testing-library/react": "^16.0.0",
     "@types/rails__actioncable": "^6.1.0",
